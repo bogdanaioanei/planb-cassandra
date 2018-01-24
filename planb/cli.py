@@ -1,6 +1,7 @@
 import re
 import click
 import logging
+import subprocess
 
 from .common import boto_client, list_instances
 from .show_cluster import show_instances
@@ -165,10 +166,31 @@ def update(cluster_name: str,
 
 @cli.command()
 @click.option('--cluster-name', type=str, required=True)
-@click.option('--region', type=str)
+@click.option('--region', type=str, required=True)
 def nodes(region: str, cluster_name: str):
     # TODO: we should extend it to list of regions
     # TODO: we could derive the regions a cluster is deployed to from SRV DNS record
     ec2 = boto_client('ec2', region)
     instances = list_instances(ec2, cluster_name)
     show_instances(instances)
+
+
+@cli.command()
+@click.option('--cluster-name', type=str, required=True)
+@click.option('--region', type=str, required=True)
+@click.option('--odd-host', '-O', type=str, required=True)
+@click.option('--reason', type=str, required=True)
+@click.argument('command', nargs=-1)
+def nodetool(command: list, cluster_name: str, region: str, odd_host: str, reason: str):
+    ec2 = boto_client('ec2', region)
+    instances = list_instances(ec2, cluster_name)
+    for i in instances:
+        ip = i['PrivateIpAddress']
+        piu_cmd = ['piu', 'request-access', '--odd-host', odd_host, ip, reason]
+        subprocess.check_call(piu_cmd)
+
+        ssh_hops_cmd = [
+            'ssh', '-A', odd_host, 'ssh', '-o', 'StrictHostKeyChecking=no', ip,
+            'docker', 'exec', 'taupageapp', 'nodetool'
+        ]
+        subprocess.call(ssh_hops_cmd + list(command))
