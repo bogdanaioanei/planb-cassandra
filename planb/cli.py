@@ -179,18 +179,29 @@ def nodes(region: str, cluster_name: str):
 @click.option('--cluster-name', type=str, required=True)
 @click.option('--region', type=str, required=True)
 @click.option('--odd-host', '-O', type=str, required=True)
-@click.option('--reason', type=str, required=True)
+@click.option('--piu', type=str, help="Run piu first with this parameter as reason.")
+@click.option('--echo', is_flag=True, help="Print the ssh command before running it.")
 @click.argument('command', nargs=-1)
-def nodetool(command: list, cluster_name: str, region: str, odd_host: str, reason: str):
-    ec2 = boto_client('ec2', region)
-    instances = list_instances(ec2, cluster_name)
-    for i in instances:
-        ip = i['PrivateIpAddress']
-        piu_cmd = ['piu', 'request-access', '--odd-host', odd_host, ip, reason]
-        subprocess.check_call(piu_cmd)
+def nodetool(command: list,
+             cluster_name: str,
+             region: str,
+             odd_host: str,
+             piu: str,
+             echo: bool):
 
-        ssh_hops_cmd = [
+    ec2 = boto_client('ec2', region)
+    ips = [i['PrivateIpAddress'] for i in list_instances(ec2, cluster_name)]
+    for ip in sorted(ips):
+        if piu:
+            piu_cmd = ['piu', 'request-access', '--odd-host', odd_host, ip, piu]
+            subprocess.check_call(piu_cmd)
+
+        ssh_cmd = [
             'ssh', '-A', odd_host, 'ssh', '-o', 'StrictHostKeyChecking=no', ip,
             'docker', 'exec', 'taupageapp', 'nodetool'
-        ]
-        subprocess.call(ssh_hops_cmd + list(command))
+        ] + list(command)
+        if echo:
+            cmdline = " ".join(ssh_cmd)
+            print("-"*len(cmdline))
+            print(cmdline)
+        subprocess.call(ssh_cmd)
